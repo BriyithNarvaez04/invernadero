@@ -1,0 +1,143 @@
+/**
+ * @file main.ino
+ * @brief Código para leer sensores y manejar alarmas con FreeRTOS en ESP32
+ * 
+ * Este programa lee la temperatura, humedad y luz, mostrando los datos en un LCD
+ * y activando alarmas en caso de valores fuera de rango.
+ * 
+ * @author Karol Tatiana Palechor Valencia
+ * @date 2025-03-26
+ */
+
+#include <Arduino.h>
+#include "DHT.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include <LiquidCrystal.h>
+#include <RTClib.h>
+
+/// Definición de pines y configuración del hardware
+#define LED_BLUE 27
+#define LED_RED 25
+#define DHTPIN 4
+#define LDRPIN 34
+#define BUZZER_PIN 26
+#define DHTTYPE DHT11
+
+const int button = 13;
+const int button2 = 14;
+volatile int contador = 0;
+
+/**
+ * @struct TaskParams
+ * @brief Estructura para pasar parámetros a las tareas FreeRTOS
+ */
+struct TaskParams {
+    QueueHandle_t queueTemp; ///< Cola para temperatura
+    QueueHandle_t queueHumidity; ///< Cola para humedad
+    QueueHandle_t queueLight; ///< Cola para luz
+    DHT *dht; ///< Sensor DHT
+    RTC_DS1307 *rtc; ///< Reloj RTC
+    LiquidCrystal *lcd; ///< Pantalla LCD
+};
+
+/**
+ * @struct StabilityData
+ * @brief Estructura para manejar estabilidad en las lecturas
+ */
+struct StabilityData {
+    unsigned long lastStableTime;
+    const unsigned long stableThreshold;
+    const unsigned long lightSleepDuration;
+    bool isStable;
+
+    /**
+     * @brief Constructor por defecto
+     */
+    StabilityData() : lastStableTime(0), stableThreshold(30000), lightSleepDuration(20000), isStable(true) {}
+};
+
+/// Declaración de funciones
+void TaskReadTemp(void *pvParameters);
+void TaskReadHumidity(void *pvParameters);
+void TaskReadLight(void *pvParameters);
+void TaskDisplayData(void *pvParameters);
+void IRAM_ATTR buttonISR();
+
+/**
+ * @brief Configuración inicial del sistema
+ */
+void setup() {
+    Serial.begin(115200);
+    Wire.begin(32, 33);
+    
+    auto *rtc = new RTC_DS1307();
+    rtc->begin();
+    if (!rtc->isrunning()) {
+        rtc->adjust(DateTime(F(__DATE__), F(__TIME__)));
+    }
+    
+    auto *dht = new DHT(DHTPIN, DHTTYPE);
+    dht->begin();
+    
+    auto *lcd = new LiquidCrystal(23, 22, 21, 19, 18, 5);
+    lcd->begin(16, 2);
+    
+    pinMode(LED_BLUE, OUTPUT);
+    pinMode(LED_RED, OUTPUT);
+    pinMode(BUZZER_PIN, OUTPUT);
+    
+    pinMode(button, INPUT_PULLUP);
+    pinMode(button2, INPUT_PULLUP);
+    
+    attachInterrupt(button, buttonISR, FALLING);
+    attachInterrupt(button2, buttonISR, FALLING);
+    
+    QueueHandle_t queueTemp = xQueueCreate(5, sizeof(float));
+    QueueHandle_t queueHumidity = xQueueCreate(5, sizeof(float));
+    QueueHandle_t queueLight = xQueueCreate(5, sizeof(int));
+    
+    if (queueTemp && queueHumidity && queueLight) {
+        auto *params = new TaskParams{queueTemp, queueHumidity, queueLight, dht, rtc, lcd};
+        xTaskCreate(TaskReadTemp, "ReadTemp", 2048, params, 2, NULL);
+        xTaskCreate(TaskReadHumidity, "ReadHumidity", 2048, params, 2, NULL);
+        xTaskCreate(TaskReadLight, "ReadLight", 2048, params, 1, NULL);
+        xTaskCreate(TaskDisplayData, "DisplayData", 4096, params, 1, NULL);
+    }
+}
+
+/**
+ * @brief Bucle principal vacío, ya que se usa FreeRTOS
+ */
+void loop() {}
+
+/**
+ * @brief Tarea que lee la temperatura y la almacena en la cola
+ * @param pvParameters Puntero a parámetros de la tarea
+ */
+void TaskReadTemp(void *pvParameters) {
+    auto *params = static_cast<TaskParams *>(pvParameters);
+    for (;;) {
+        float temp = params->dht->readTemperature();
+        if (!isnan(temp)) {
+            xQueueSend(params->queueTemp, &temp, portMAX_DELAY);
+        }
+        vTaskDelay(pdMS_TO_TICKS(2500));
+    }
+}
+
+/**
+ * @brief Interrupción del botón
+ */
+void IRAM_ATTR buttonISR() {
+    static unsigned long lastInterruptTime = 0;
+    unsigned long interruptTime = millis();
+    
+    if (interruptTime - lastInterruptTime > 200) {
+        contador++;
+        Serial.print("Contador: ");
+        Serial.println(contador);
+    }
+    lastInterruptTime = interruptTime;
+}
