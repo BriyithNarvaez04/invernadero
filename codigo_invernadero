@@ -18,39 +18,44 @@
 #include <RTClib.h>
 
 /// Definición de pines y configuración del hardware
-#define LED_BLUE 27
-#define LED_RED 25
-#define DHTPIN 4
-#define LDRPIN 34
-#define BUZZER_PIN 26
-#define DHTTYPE DHT11
+#define LED_BLUE 27 ///< LED azul para indicar estado
+#define LED_RED 25 ///< LED rojo para indicar alerta
+#define DHTPIN 4 ///< Pin del sensor DHT11
+#define LDRPIN 34 ///< Pin del sensor de luz (LDR)
+#define BUZZER_PIN 26 ///< Pin del buzzer
+#define DHTTYPE DHT11 ///< Tipo de sensor DHT
 
-const int button = 13;
-const int button2 = 14;
-volatile int contador = 0;
+/// Definición de pines para botones de control
+const int button = 13; ///< Botón de incremento de contador
+const int button2 = 14; ///< Botón adicional para futuras funciones
+volatile int contador = 0; ///< Contador global
 
 /**
  * @struct TaskParams
  * @brief Estructura para pasar parámetros a las tareas FreeRTOS
+ * 
+ * Contiene colas para comunicación entre tareas y punteros a los sensores y pantalla LCD.
  */
 struct TaskParams {
     QueueHandle_t queueTemp; ///< Cola para temperatura
     QueueHandle_t queueHumidity; ///< Cola para humedad
     QueueHandle_t queueLight; ///< Cola para luz
-    DHT *dht; ///< Sensor DHT
-    RTC_DS1307 *rtc; ///< Reloj RTC
-    LiquidCrystal *lcd; ///< Pantalla LCD
+    DHT *dht; ///< Puntero al sensor DHT
+    RTC_DS1307 *rtc; ///< Puntero al reloj RTC
+    LiquidCrystal *lcd; ///< Puntero a la pantalla LCD
 };
 
 /**
  * @struct StabilityData
  * @brief Estructura para manejar estabilidad en las lecturas
+ * 
+ * Permite verificar si las lecturas se mantienen estables antes de realizar cambios en las alarmas.
  */
 struct StabilityData {
-    unsigned long lastStableTime;
-    const unsigned long stableThreshold;
-    const unsigned long lightSleepDuration;
-    bool isStable;
+    unsigned long lastStableTime; ///< Último tiempo de estabilidad registrado
+    const unsigned long stableThreshold; ///< Umbral de estabilidad en milisegundos
+    const unsigned long lightSleepDuration; ///< Duración del modo de bajo consumo
+    bool isStable; ///< Indicador de estabilidad
 
     /**
      * @brief Constructor por defecto
@@ -58,7 +63,7 @@ struct StabilityData {
     StabilityData() : lastStableTime(0), stableThreshold(30000), lightSleepDuration(20000), isStable(true) {}
 };
 
-/// Declaración de funciones
+/// Declaración de funciones para manejo de tareas y botones
 void TaskReadTemp(void *pvParameters);
 void TaskReadHumidity(void *pvParameters);
 void TaskReadLight(void *pvParameters);
@@ -67,6 +72,8 @@ void IRAM_ATTR buttonISR();
 
 /**
  * @brief Configuración inicial del sistema
+ * 
+ * Se inicializan los sensores, la pantalla LCD, las colas de mensajes y las tareas de FreeRTOS.
  */
 void setup() {
     Serial.begin(115200);
@@ -109,12 +116,16 @@ void setup() {
 
 /**
  * @brief Bucle principal vacío, ya que se usa FreeRTOS
+ * 
+ * El control del flujo del programa se delega a las tareas creadas en FreeRTOS.
  */
 void loop() {}
 
 /**
  * @brief Tarea que lee la temperatura y la almacena en la cola
  * @param pvParameters Puntero a parámetros de la tarea
+ * 
+ * Se obtiene la lectura del sensor DHT11 y se envía a la cola para ser procesada.
  */
 void TaskReadTemp(void *pvParameters) {
     auto *params = static_cast<TaskParams *>(pvParameters);
@@ -129,6 +140,8 @@ void TaskReadTemp(void *pvParameters) {
 
 /**
  * @brief Interrupción del botón
+ * 
+ * Maneja el incremento del contador cuando se detecta una pulsación válida del botón.
  */
 void IRAM_ATTR buttonISR() {
     static unsigned long lastInterruptTime = 0;
