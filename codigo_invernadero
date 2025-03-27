@@ -138,6 +138,93 @@ void TaskReadTemp(void *pvParameters) {
     }
 }
 
+void TaskReadHumidity(void *pvParameters) {
+    auto *params = static_cast<TaskParams *>(pvParameters);
+    for (;;) {
+        float humedad = params->dht->readHumidity();
+        if (!isnan(humedad)) {
+            xQueueSend(params->queueHumidity, &humedad, portMAX_DELAY);
+        }
+        if (humedad > 70) {
+                digitalWrite(LED_RED, HIGH);
+                tone(BUZZER_PIN, 2000);
+                vTaskDelay(pdMS_TO_TICKS(700));
+                digitalWrite(LED_RED, LOW);
+                noTone(BUZZER_PIN);
+                vTaskDelay(pdMS_TO_TICKS(400));
+        }
+        vTaskDelay(pdMS_TO_TICKS(3200));
+    }
+}
+
+void TaskReadLight(void *pvParameters) {
+    auto *params = static_cast<TaskParams *>(pvParameters);
+    for (;;) {
+        int luz = analogRead(LDRPIN);
+        xQueueSend(params->queueLight, &luz, portMAX_DELAY);
+        if (luz > 500) {
+                digitalWrite(LED_BLUE, HIGH);
+                tone(BUZZER_PIN, 2000);
+                vTaskDelay(pdMS_TO_TICKS(700));
+                digitalWrite(LED_BLUE, LOW);
+                noTone(BUZZER_PIN);
+                vTaskDelay(pdMS_TO_TICKS(400));
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void TaskDisplayData(void *pvParameters) {
+    auto *params = static_cast<TaskParams *>(pvParameters);
+    StabilityData stabilityData; // Crear instancia de la estructura dentro de la tarea
+
+    for (;;) {
+        float temp, humedad;
+        int luz;
+        bool alarma = false;
+
+        if (xQueueReceive(params->queueTemp, &temp, pdMS_TO_TICKS(100)) &&
+            xQueueReceive(params->queueHumidity, &humedad, pdMS_TO_TICKS(100)) &&
+            xQueueReceive(params->queueLight, &luz, pdMS_TO_TICKS(100))) {
+
+            if (temp < 24 || temp > 35 || humedad > 70 || luz > 500) {
+                alarma = true;
+                stabilityData.isStable = false; 
+                stabilityData.lastStableTime = millis(); 
+            } else {
+                if (millis() - stabilityData.lastStableTime >= stabilityData.stableThreshold) {
+                    stabilityData.isStable = true; 
+                }
+            }
+
+            int crc = ((int)temp) ^ ((int)humedad) ^ luz;
+            DateTime now = params->rtc->now();
+
+            Serial.printf("$ %02d:%02d:%02d, %lu, %.2f, %.2f, %d, %s, %d $\n",
+                          now.hour(), now.minute(), now.second(), 
+                          xTaskGetTickCount() / configTICK_RATE_HZ,  
+                          temp, humedad, luz, alarma ? "ON" : "OFF", crc);
+
+            params->lcd->clear();
+            params->lcd->setCursor(0, 0);
+            params->lcd->printf("T:%.1fC H:%d%%", temp, (int)humedad);
+            params->lcd->setCursor(0, 1);
+            params->lcd->printf("L:%d Alar:%s", luz, alarma ? "ON" : "OFF");
+
+            if (stabilityData.isStable) {
+                Serial.println("Condiciones normales por 30 seg, entrando en Light Sleep...");
+                delay(100); 
+                esp_sleep_enable_timer_wakeup(stabilityData.lightSleepDuration * 1000);
+                esp_light_sleep_start(); 
+                Serial.println("Despertando del Light Sleep...");
+                stabilityData.lastStableTime = millis(); 
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+
 /**
  * @brief Interrupción del botón
  * 
