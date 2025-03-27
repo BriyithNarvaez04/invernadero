@@ -7,6 +7,7 @@
  * 
  * @author Karol Tatiana Palechor Valencia
  * @date 2025-03-26
+ * @version 1.0.0
  */
 
 #include <Arduino.h>
