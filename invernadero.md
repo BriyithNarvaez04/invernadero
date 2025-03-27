@@ -14,6 +14,7 @@ Este código implementa un sistema basado en FreeRTOS para leer sensores de temp
  * 
  * @author Karol Tatiana Palechor Valencia
  * @date 2025-03-26
+ * @version 1.0.0
  */
 
 #include <Arduino.h>
