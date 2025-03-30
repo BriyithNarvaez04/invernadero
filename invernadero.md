@@ -32,10 +32,10 @@ Definimos los pines usados para sensores, LEDs y botones.
 ```cpp
 /// Definición de pines y configuración del hardware
 #define LED_BLUE 27 ///< LED azul para indicar estado
-#define LED_RED 25 ///< LED rojo para indicar alerta
+#define LED_RED 26 ///< LED rojo para indicar alerta
 #define DHTPIN 4 ///< Pin del sensor DHT11
 #define LDRPIN 34 ///< Pin del sensor de luz (LDR)
-#define BUZZER_PIN 26 ///< Pin del buzzer
+#define BUZZER_PIN 25 ///< Pin del buzzer
 #define DHTTYPE DHT11 ///< Tipo de sensor DHT
 
 /// Definición de pines para botones de control
@@ -105,7 +105,7 @@ void IRAM_ATTR buttonISR();
  */
 void setup() {
     Serial.begin(115200);
-    Wire.begin(32, 33);
+    Wire.begin(33, 32);
     
     auto *rtc = new RTC_DS1307();
     rtc->begin();
