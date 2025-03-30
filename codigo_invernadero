@@ -24,7 +24,7 @@
 #define DHTPIN 4 ///< Pin del sensor DHT11
 #define LDRPIN 34 ///< Pin del sensor de luz (LDR)
 #define BUZZER_PIN 25 ///< Pin del buzzer
-#define DHTTYPE DHT22 ///< Tipo de sensor DHT
+#define DHTTYPE DHT11 ///< Tipo de sensor DHT
 
 /// Definición de pines para botones de control
 const int button = 13; ///< Botón de incremento de contador
