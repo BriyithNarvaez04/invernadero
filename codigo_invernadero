@@ -24,7 +24,7 @@
 #define DHTPIN 4 ///< Pin del sensor DHT11
 #define LDRPIN 34 ///< Pin del sensor de luz (LDR)
 #define BUZZER_PIN 25 ///< Pin del buzzer
-#define DHTTYPE DHT11 ///< Tipo de sensor DHT
+#define DHTTYPE DHT22 ///< Tipo de sensor DHT
 
 /// Definición de pines para botones de control
 const int button = 13; ///< Botón de incremento de contador
@@ -135,6 +135,14 @@ void TaskReadTemp(void *pvParameters) {
         if (!isnan(temp)) {
             xQueueSend(params->queueTemp, &temp, portMAX_DELAY);
         }
+        if (temp < 24 || temp > 35) {
+                digitalWrite(LED_RED, HIGH);
+                tone(BUZZER_PIN, 2000);
+                vTaskDelay(pdMS_TO_TICKS(700));
+                digitalWrite(LED_RED, LOW);
+                noTone(BUZZER_PIN);
+                vTaskDelay(pdMS_TO_TICKS(400));
+        }
         vTaskDelay(pdMS_TO_TICKS(2500));
     }
 }
@@ -214,7 +222,7 @@ void TaskDisplayData(void *pvParameters) {
 
             if (stabilityData.isStable) {
                 Serial.println("Condiciones normales por 30 seg, entrando en Light Sleep...");
-                delay(100); 
+                delay(100);
                 esp_sleep_enable_timer_wakeup(stabilityData.lightSleepDuration * 1000);
                 esp_light_sleep_start(); 
                 Serial.println("Despertando del Light Sleep...");
