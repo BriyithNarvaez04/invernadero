@@ -172,6 +172,14 @@ void TaskReadTemp(void *pvParameters) {
         if (!isnan(temp)) {
             xQueueSend(params->queueTemp, &temp, portMAX_DELAY);
         }
+        if (temp < 24 || temp > 35) {
+                digitalWrite(LED_RED, HIGH);
+                tone(BUZZER_PIN, 2000);
+                vTaskDelay(pdMS_TO_TICKS(700));
+                digitalWrite(LED_RED, LOW);
+                noTone(BUZZER_PIN);
+                vTaskDelay(pdMS_TO_TICKS(400));
+        }
         vTaskDelay(pdMS_TO_TICKS(2500));
     }
 }
