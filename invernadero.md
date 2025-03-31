@@ -14,7 +14,7 @@ Este código implementa un sistema basado en FreeRTOS para leer sensores de temp
  * 
  * @author Karol Tatiana Palechor Valencia
  * @date 2025-03-26
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 #include <Arduino.h>
@@ -82,7 +82,7 @@ struct StabilityData {
     /**
      * @brief Constructor por defecto
      */
-    StabilityData() : lastStableTime(0), stableThreshold(30000), lightSleepDuration(20000), isStable(true) {}
+    StabilityData() : lastStableTime(millis()), stableThreshold(30000), lightSleepDuration(20000), isStable(true) {}
 };
 ```
 
@@ -108,9 +108,18 @@ void setup() {
     Wire.begin(33, 32);
     
     auto *rtc = new RTC_DS1307();
-    rtc->begin();
-    if (!rtc->isrunning()) {
-        rtc->adjust(DateTime(F(__DATE__), F(__TIME__)));
+    /**
+     * @brief Inicialización y comprobación del RTC
+     *
+     * Se comprueba si RTC inicia correctamente.
+     */
+    if (!rtc->begin()) {
+        Serial.println("Error: No se pudo inicializar el RTC DS1307.");
+    } else {
+        if (!rtc->isrunning()) {
+            Serial.println("RTC no está corriendo, ajustando la hora...");
+            rtc->adjust(DateTime(F(__DATE__), F(__TIME__)));
+        }
     }
     
     auto *dht = new DHT(DHTPIN, DHTTYPE);
@@ -132,13 +141,30 @@ void setup() {
     QueueHandle_t queueTemp = xQueueCreate(5, sizeof(float));
     QueueHandle_t queueHumidity = xQueueCreate(5, sizeof(float));
     QueueHandle_t queueLight = xQueueCreate(5, sizeof(int));
-    
-    if (queueTemp && queueHumidity && queueLight) {
-        auto *params = new TaskParams{queueTemp, queueHumidity, queueLight, dht, rtc, lcd};
-        xTaskCreate(TaskReadTemp, "ReadTemp", 2048, params, 2, NULL);
-        xTaskCreate(TaskReadHumidity, "ReadHumidity", 2048, params, 2, NULL);
-        xTaskCreate(TaskReadLight, "ReadLight", 2048, params, 1, NULL);
-        xTaskCreate(TaskDisplayData, "DisplayData", 4096, params, 1, NULL);
+
+    /**
+     * @brief Validación de creación de colas
+     */
+    if (queueTemp == NULL || queueHumidity == NULL || queueLight == NULL) {
+        Serial.println("Error: No se pudieron crear las colas de mensajes.");
+        while (1); /// Detenemos el sistema
+    }
+
+    /**
+     * @brief Validación de creación de tareas
+     */
+    auto *params = new TaskParams{queueTemp, queueHumidity, queueLight, dht, rtc, lcd};
+    if (xTaskCreate(TaskReadTemp, "ReadTemp", 2048, params, 2, NULL) != pdPASS) {
+        Serial.println("Error: No se pudo crear la tarea TaskReadTemp.");
+    }
+    if (xTaskCreate(TaskReadHumidity, "ReadHumidity", 2048, params, 2, NULL) != pdPASS) {
+        Serial.println("Error: No se pudo crear la tarea TaskReadHumidity.");
+    }
+    if (xTaskCreate(TaskReadLight, "ReadLight", 2048, params, 1, NULL) != pdPASS) {
+        Serial.println("Error: No se pudo crear la tarea TaskReadLight.");
+    }
+    if (xTaskCreate(TaskDisplayData, "DisplayData", 4096, params, 1, NULL) != pdPASS) {
+        Serial.println("Error: No se pudo crear la tarea TaskDisplayData.");
     }
 }
 ```
@@ -169,9 +195,19 @@ void TaskReadTemp(void *pvParameters) {
     auto *params = static_cast<TaskParams *>(pvParameters);
     for (;;) {
         float temp = params->dht->readTemperature();
+        /**
+         * @brief Verificación de lectura de sensor de temperatura
+         *
+         * Manejo de errores en información y toma de decisiones
+         */
         if (!isnan(temp)) {
-            xQueueSend(params->queueTemp, &temp, portMAX_DELAY);
+            if (xQueueSend(params->queueTemp, &temp, portMAX_DELAY) != pdPASS) {
+                Serial.println("Error: No se pudo enviar la temperatura a la cola.");
+            }
+        } else {
+            Serial.println("Error: Lectura inválida de temperatura.");
         }
+
         if (temp < 24 || temp > 35) {
                 digitalWrite(LED_RED, HIGH);
                 tone(BUZZER_PIN, 2000);
@@ -188,9 +224,19 @@ void TaskReadHumidity(void *pvParameters) {
     auto *params = static_cast<TaskParams *>(pvParameters);
     for (;;) {
         float humedad = params->dht->readHumidity();
+        /* Verificación de la lectura del sensor
+         * @brief Verificación de lectura de sensor de humedad
+         *
+         * Manejo de errores en información y toma de decisiones
+         */
         if (!isnan(humedad)) {
-            xQueueSend(params->queueHumidity, &humedad, portMAX_DELAY);
+            if (xQueueSend(params->queueHumidity, &humedad, portMAX_DELAY) != pdPASS) {
+                Serial.println("Error: No se pudo enviar la humedad a la cola.");
+            }
+        } else {
+          Serial.println("Error: Lectura inválida de humedad.");
         }
+
         if (humedad > 70) {
                 digitalWrite(LED_RED, HIGH);
                 tone(BUZZER_PIN, 2000);
@@ -207,7 +253,15 @@ void TaskReadLight(void *pvParameters) {
     auto *params = static_cast<TaskParams *>(pvParameters);
     for (;;) {
         int luz = analogRead(LDRPIN);
-        xQueueSend(params->queueLight, &luz, portMAX_DELAY);
+        /*
+         * @brief Verificación de lectura de sensor de luz
+         *
+         * Manejo de errores en información y toma de decisiones
+         */
+        if (xQueueSend(params->queueLight, &luz, portMAX_DELAY) != pdPASS) {
+            Serial.println("Error: No se pudo enviar la lectura de luz a la cola.");
+        }
+
         if (luz > 500) {
                 digitalWrite(LED_BLUE, HIGH);
                 tone(BUZZER_PIN, 2000);
