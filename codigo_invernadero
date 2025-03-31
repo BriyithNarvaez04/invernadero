@@ -7,7 +7,7 @@
  * 
  * @author Karol Tatiana Palechor Valencia
  * @date 2025-03-26
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 #include <Arduino.h>
@@ -81,7 +81,11 @@ void setup() {
     Wire.begin(33, 32);
     
     auto *rtc = new RTC_DS1307();
-    /// Comprobación del RTC
+    /**
+     * @brief Inicialización y comprobación del RTC
+     *
+     * Se comprueba si RTC inicia correctamente.
+     */
     if (!rtc->begin()) {
         Serial.println("Error: No se pudo inicializar el RTC DS1307.");
     } else {
@@ -111,13 +115,17 @@ void setup() {
     QueueHandle_t queueHumidity = xQueueCreate(5, sizeof(float));
     QueueHandle_t queueLight = xQueueCreate(5, sizeof(int));
 
-    /// Validación de creación de colas
+    /**
+     * @brief Validación de creación de colas
+     */
     if (queueTemp == NULL || queueHumidity == NULL || queueLight == NULL) {
         Serial.println("Error: No se pudieron crear las colas de mensajes.");
         while (1); /// Detenemos el sistema
     }
 
-    /// Validación de creación de tareas
+    /**
+     * @brief Validación de creación de tareas
+     */
     auto *params = new TaskParams{queueTemp, queueHumidity, queueLight, dht, rtc, lcd};
     if (xTaskCreate(TaskReadTemp, "ReadTemp", 2048, params, 2, NULL) != pdPASS) {
         Serial.println("Error: No se pudo crear la tarea TaskReadTemp.");
@@ -150,7 +158,11 @@ void TaskReadTemp(void *pvParameters) {
     auto *params = static_cast<TaskParams *>(pvParameters);
     for (;;) {
         float temp = params->dht->readTemperature();
-        // Verificación de la lectura del sensor
+        /**
+         * @brief Verificación de lectura de sensor de temperatura
+         *
+         * Manejo de errores en información y toma de decisiones
+         */
         if (!isnan(temp)) {
             if (xQueueSend(params->queueTemp, &temp, portMAX_DELAY) != pdPASS) {
                 Serial.println("Error: No se pudo enviar la temperatura a la cola.");
@@ -158,11 +170,7 @@ void TaskReadTemp(void *pvParameters) {
         } else {
             Serial.println("Error: Lectura inválida de temperatura.");
         }
-        /**
-        if (!isnan(temp)) {
-            xQueueSend(params->queueTemp, &temp, portMAX_DELAY);
-        }
-         */
+
         if (temp < 24 || temp > 35) {
                 digitalWrite(LED_RED, HIGH);
                 tone(BUZZER_PIN, 2000);
@@ -179,19 +187,19 @@ void TaskReadHumidity(void *pvParameters) {
     auto *params = static_cast<TaskParams *>(pvParameters);
     for (;;) {
         float humedad = params->dht->readHumidity();
-        // Verificación de la lectura del sensor
+        /* Verificación de la lectura del sensor
+         * @brief Verificación de lectura de sensor de humedad
+         *
+         * Manejo de errores en información y toma de decisiones
+         */
         if (!isnan(humedad)) {
             if (xQueueSend(params->queueHumidity, &humedad, portMAX_DELAY) != pdPASS) {
                 Serial.println("Error: No se pudo enviar la humedad a la cola.");
             }
         } else {
-            Serial.println("Error: Lectura inválida de humedad.");
+          Serial.println("Error: Lectura inválida de humedad.");
         }
-        /**
-        if (!isnan(humedad)) {
-            xQueueSend(params->queueHumidity, &humedad, portMAX_DELAY);
-        }
-        */
+
         if (humedad > 70) {
                 digitalWrite(LED_RED, HIGH);
                 tone(BUZZER_PIN, 2000);
@@ -208,13 +216,15 @@ void TaskReadLight(void *pvParameters) {
     auto *params = static_cast<TaskParams *>(pvParameters);
     for (;;) {
         int luz = analogRead(LDRPIN);
-        // Verificación de la lectura del sensor
+        /*
+         * @brief Verificación de lectura de sensor de luz
+         *
+         * Manejo de errores en información y toma de decisiones
+         */
         if (xQueueSend(params->queueLight, &luz, portMAX_DELAY) != pdPASS) {
             Serial.println("Error: No se pudo enviar la lectura de luz a la cola.");
         }
-        /**
-        xQueueSend(params->queueLight, &luz, portMAX_DELAY);
-         */
+
         if (luz > 500) {
                 digitalWrite(LED_BLUE, HIGH);
                 tone(BUZZER_PIN, 2000);
