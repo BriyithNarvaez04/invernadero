@@ -24,7 +24,7 @@
 #define DHTPIN 4 ///< Pin del sensor DHT11
 #define LDRPIN 34 ///< Pin del sensor de luz (LDR)
 #define BUZZER_PIN 25 ///< Pin del buzzer
-#define DHTTYPE DHT11 ///< Tipo de sensor DHT
+#define DHTTYPE DHT22 ///< Tipo de sensor DHT
 
 /// Definición de pines para botones de control
 const int button = 13; ///< Botón de incremento de contador
@@ -61,7 +61,7 @@ struct StabilityData {
     /**
      * @brief Constructor por defecto
      */
-    StabilityData() : lastStableTime(0), stableThreshold(30000), lightSleepDuration(20000), isStable(true) {}
+    StabilityData() : lastStableTime(millis()), stableThreshold(30000), lightSleepDuration(20000), isStable(true) {}
 };
 
 /// Declaración de funciones para manejo de tareas y botones
@@ -81,9 +81,14 @@ void setup() {
     Wire.begin(33, 32);
     
     auto *rtc = new RTC_DS1307();
-    rtc->begin();
-    if (!rtc->isrunning()) {
-        rtc->adjust(DateTime(F(__DATE__), F(__TIME__)));
+    /// Comprobación del RTC
+    if (!rtc->begin()) {
+        Serial.println("Error: No se pudo inicializar el RTC DS1307.");
+    } else {
+        if (!rtc->isrunning()) {
+            Serial.println("RTC no está corriendo, ajustando la hora...");
+            rtc->adjust(DateTime(F(__DATE__), F(__TIME__)));
+        }
     }
     
     auto *dht = new DHT(DHTPIN, DHTTYPE);
@@ -105,13 +110,26 @@ void setup() {
     QueueHandle_t queueTemp = xQueueCreate(5, sizeof(float));
     QueueHandle_t queueHumidity = xQueueCreate(5, sizeof(float));
     QueueHandle_t queueLight = xQueueCreate(5, sizeof(int));
-    
-    if (queueTemp && queueHumidity && queueLight) {
-        auto *params = new TaskParams{queueTemp, queueHumidity, queueLight, dht, rtc, lcd};
-        xTaskCreate(TaskReadTemp, "ReadTemp", 2048, params, 2, NULL);
-        xTaskCreate(TaskReadHumidity, "ReadHumidity", 2048, params, 2, NULL);
-        xTaskCreate(TaskReadLight, "ReadLight", 2048, params, 1, NULL);
-        xTaskCreate(TaskDisplayData, "DisplayData", 4096, params, 1, NULL);
+
+    /// Validación de creación de colas
+    if (queueTemp == NULL || queueHumidity == NULL || queueLight == NULL) {
+        Serial.println("Error: No se pudieron crear las colas de mensajes.");
+        while (1); /// Detenemos el sistema
+    }
+
+    /// Validación de creación de tareas
+    auto *params = new TaskParams{queueTemp, queueHumidity, queueLight, dht, rtc, lcd};
+    if (xTaskCreate(TaskReadTemp, "ReadTemp", 2048, params, 2, NULL) != pdPASS) {
+        Serial.println("Error: No se pudo crear la tarea TaskReadTemp.");
+    }
+    if (xTaskCreate(TaskReadHumidity, "ReadHumidity", 2048, params, 2, NULL) != pdPASS) {
+        Serial.println("Error: No se pudo crear la tarea TaskReadHumidity.");
+    }
+    if (xTaskCreate(TaskReadLight, "ReadLight", 2048, params, 1, NULL) != pdPASS) {
+        Serial.println("Error: No se pudo crear la tarea TaskReadLight.");
+    }
+    if (xTaskCreate(TaskDisplayData, "DisplayData", 4096, params, 1, NULL) != pdPASS) {
+        Serial.println("Error: No se pudo crear la tarea TaskDisplayData.");
     }
 }
 
@@ -132,9 +150,19 @@ void TaskReadTemp(void *pvParameters) {
     auto *params = static_cast<TaskParams *>(pvParameters);
     for (;;) {
         float temp = params->dht->readTemperature();
+        // Verificación de la lectura del sensor
+        if (!isnan(temp)) {
+            if (xQueueSend(params->queueTemp, &temp, portMAX_DELAY) != pdPASS) {
+                Serial.println("Error: No se pudo enviar la temperatura a la cola.");
+            }
+        } else {
+            Serial.println("Error: Lectura inválida de temperatura.");
+        }
+        /**
         if (!isnan(temp)) {
             xQueueSend(params->queueTemp, &temp, portMAX_DELAY);
         }
+         */
         if (temp < 24 || temp > 35) {
                 digitalWrite(LED_RED, HIGH);
                 tone(BUZZER_PIN, 2000);
@@ -151,9 +179,19 @@ void TaskReadHumidity(void *pvParameters) {
     auto *params = static_cast<TaskParams *>(pvParameters);
     for (;;) {
         float humedad = params->dht->readHumidity();
+        // Verificación de la lectura del sensor
+        if (!isnan(humedad)) {
+            if (xQueueSend(params->queueHumidity, &humedad, portMAX_DELAY) != pdPASS) {
+                Serial.println("Error: No se pudo enviar la humedad a la cola.");
+            }
+        } else {
+            Serial.println("Error: Lectura inválida de humedad.");
+        }
+        /**
         if (!isnan(humedad)) {
             xQueueSend(params->queueHumidity, &humedad, portMAX_DELAY);
         }
+        */
         if (humedad > 70) {
                 digitalWrite(LED_RED, HIGH);
                 tone(BUZZER_PIN, 2000);
@@ -170,7 +208,13 @@ void TaskReadLight(void *pvParameters) {
     auto *params = static_cast<TaskParams *>(pvParameters);
     for (;;) {
         int luz = analogRead(LDRPIN);
+        // Verificación de la lectura del sensor
+        if (xQueueSend(params->queueLight, &luz, portMAX_DELAY) != pdPASS) {
+            Serial.println("Error: No se pudo enviar la lectura de luz a la cola.");
+        }
+        /**
         xQueueSend(params->queueLight, &luz, portMAX_DELAY);
+         */
         if (luz > 500) {
                 digitalWrite(LED_BLUE, HIGH);
                 tone(BUZZER_PIN, 2000);
@@ -202,7 +246,7 @@ void TaskDisplayData(void *pvParameters) {
                 stabilityData.lastStableTime = millis(); 
             } else {
                 if (millis() - stabilityData.lastStableTime >= stabilityData.stableThreshold) {
-                    stabilityData.isStable = true; 
+                    stabilityData.isStable = true;
                 }
             }
 
@@ -223,13 +267,13 @@ void TaskDisplayData(void *pvParameters) {
             if (stabilityData.isStable) {
                 Serial.println("Condiciones normales por 30 seg, entrando en Light Sleep...");
                 delay(100);
+                Serial.println(stabilityData.lightSleepDuration * 1000);
                 esp_sleep_enable_timer_wakeup(stabilityData.lightSleepDuration * 1000);
-                esp_light_sleep_start(); 
+                esp_light_sleep_start();
                 Serial.println("Despertando del Light Sleep...");
                 stabilityData.lastStableTime = millis(); 
             }
         }
-
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
