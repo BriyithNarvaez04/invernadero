@@ -193,6 +193,7 @@ Función de FreeRTOS para leer la temperatura y enviarla a la cola de mensajes.
  */
 void TaskReadTemp(void *pvParameters) {
     auto *params = static_cast<TaskParams *>(pvParameters);
+    static bool firstHumidityValid = false;
     for (;;) {
         float temp = params->dht->readTemperature();
         /**
@@ -200,12 +201,15 @@ void TaskReadTemp(void *pvParameters) {
          *
          * Manejo de errores en información y toma de decisiones
          */
-        if (!isnan(temp)) {
-            if (xQueueSend(params->queueTemp, &temp, portMAX_DELAY) != pdPASS) {
-                Serial.println("Error: No se pudo enviar la temperatura a la cola.");
+        if (!isnan(humedad)) {
+            if (xQueueSend(params->queueHumidity, &humedad, portMAX_DELAY) != pdPASS) {
+                Serial.println("Error: No se pudo enviar la humedad a la cola.");
             }
+            firstHumidityValid = true;
         } else {
-            Serial.println("Error: Lectura inválida de temperatura.");
+          if (firstHumidityValid) {
+            Serial.println("Error: Lectura inválida de humedad.");
+          }
         }
 
         if (temp < 24 || temp > 35) {
