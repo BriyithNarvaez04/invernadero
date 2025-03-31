@@ -351,3 +351,6 @@ void IRAM_ATTR buttonISR() {
     lastInterruptTime = interruptTime;
 }
 ```
+## Simulación en Wokwi.
+
+Link de acceso: https://wokwi.com/projects/426857051864797185
